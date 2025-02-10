@@ -3,6 +3,11 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_render.h>
 
+#define LEFT_TURN_THRESHOLD 500.0  // The threshold for making the left turn
+#define TURN_DISTANCE 50.0        // Distance to move after making the left turn
+#define TURN_ANGLE 90             // The angle of the left turn
+#define PRIORITY_LANE_THRESHOLD 10 // Number of vehicles to activate priority lane
+
 const int WIDTH = 800, HEIGHT = 800;
 
 typedef struct {
@@ -14,6 +19,7 @@ typedef struct {
     float x, y;   // Position of vehicle
     float speed;  // Speed of vehicle
     int lane;     // Lane index (matches traffic light index)
+    int hasTurnedLeft;  // Flag to track if the vehicle has turned left
 } Vehicle;
 
 // Queue node
@@ -26,10 +32,12 @@ typedef struct Node {
 typedef struct {
     Node* front;
     Node* rear;
+    int count; // To track the number of vehicles in the queue
 } Queue;
 
 void initQueue(Queue* q) {
     q->front = q->rear = NULL;
+    q->count = 0;
 }
 
 void enqueue(Queue* q, Vehicle v) {
@@ -38,10 +46,11 @@ void enqueue(Queue* q, Vehicle v) {
     newNode->next = NULL;
     if (q->rear == NULL) {
         q->front = q->rear = newNode;
-        return;
+    } else {
+        q->rear->next = newNode;
+        q->rear = newNode;
     }
-    q->rear->next = newNode;
-    q->rear = newNode;
+    q->count++;  // Increment vehicle count
 }
 
 void dequeue(Queue* q) {
@@ -50,10 +59,37 @@ void dequeue(Queue* q) {
     q->front = q->front->next;
     if (q->front == NULL) q->rear = NULL;
     free(temp);
+    q->count--;  // Decrement vehicle count
 }
 
 int isQueueEmpty(Queue* q) {
     return q->front == NULL;
+}
+
+// Function to read vehicles from laneA.txt and update queue
+void updateVehicleQueueFromFile(Queue* q, const char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+        printf("Error opening %s for reading.\n", filename);
+        return;
+    }
+
+    // Clear the queue before adding new vehicles
+    while (!isQueueEmpty(q)) {
+        dequeue(q);
+    }
+
+    char line[100];
+    while (fgets(line, sizeof(line), fp)) {
+        Vehicle v;
+        int lane;
+        if (sscanf(line, "%d,%f,%f,%f", &lane, &v.x, &v.y, &v.speed) == 4) {
+            v.lane = lane;  // Assign lane from file data
+            v.hasTurnedLeft = 0;  // Initialize the left turn flag
+            enqueue(q, v);
+        }
+    }
+    fclose(fp);
 }
 
 void renderTrafficLight(SDL_Renderer *renderer, TrafficLight light) {
@@ -72,6 +108,15 @@ void renderVehicle(SDL_Renderer *renderer, Vehicle vehicle) {
     SDL_RenderFillRect(renderer, &rect);
 }
 
+void moveVehicleLeftTurn(Vehicle* vehicle) {
+    // Gradually change the vehicle's x and y position to simulate left turn
+    vehicle->x -= TURN_DISTANCE * 0.5;  // Move left
+    vehicle->y += TURN_DISTANCE * 0.5;  // Move downwards after left turn
+    if (vehicle->x <= 300.0f && vehicle->y >= 350.0f) {
+        vehicle->hasTurnedLeft = 1;  // Mark vehicle as having turned left
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         printf("SDL Initialization failed: %s\n", SDL_GetError());
@@ -85,6 +130,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // Initialize traffic lights for 4 directions
     TrafficLight lights[4] = {
         {270, 250, 0}, {530, 250, 1}, {270, 530, 0}, {530, 530, 0}
     };
@@ -94,32 +140,43 @@ int main(int argc, char *argv[]) {
     Queue vehicleQueue;
     initQueue(&vehicleQueue);
 
-    enqueue(&vehicleQueue, (Vehicle){100, 350, 2.0f, 0});
-    enqueue(&vehicleQueue, (Vehicle){550, 550, 1.8f, 1});
-    enqueue(&vehicleQueue, (Vehicle){300, 100, 2.5f, 2});
-
     SDL_Event event;
     int running = 1;
+    static Uint32 lastUpdateTime = 0;  // Add this to update the vehicle queue at intervals
+
     while (running) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) running = 0;
         }
+
+        // Switch the traffic light every 5 seconds
         if (SDL_GetTicks() - lastSwitchTime > 5000) {
-            lights[currentGreen].state = 0;
-            currentGreen = (currentGreen + 1) % 4;
-            lights[currentGreen].state = 1;
+            lights[currentGreen].state = 0;  // Set current green light to red
+            currentGreen = (currentGreen + 1) % 4;  // Move to the next light
+            lights[currentGreen].state = 1;  // Set new light to green
             lastSwitchTime = SDL_GetTicks();
         }
 
-        SDL_SetRenderDrawColor(renderer, 34, 139, 34, 255);
+        // Read laneA.txt to update vehicles in the queue every 5 seconds
+        if (SDL_GetTicks() - lastUpdateTime > 5000) {
+            updateVehicleQueueFromFile(&vehicleQueue, "laneA.txt");
+            lastUpdateTime = SDL_GetTicks();
+        }
+
+        // Rendering section
+        SDL_SetRenderDrawColor(renderer, 34, 139, 34, 255); // Grass background
         SDL_RenderClear(renderer);
-        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);
+
+        // Draw roads
+        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255); // Gray for roads
         SDL_FRect horizontalRoad = {0.0f, 300.0f, 800.0f, 200.0f};
         SDL_RenderFillRect(renderer, &horizontalRoad);
         SDL_FRect verticalRoad = {300.0f, 0.0f, 200.0f, 800.0f};
         SDL_RenderFillRect(renderer, &verticalRoad);
 
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        // --- Draw Lane Markings ---
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // White for lane markings
+        // Horizontal lane lines for the roads on the left and right of the vertical road
         for (int i = 1; i <= 2; i++) {
             float laneY = 300.0f + (i * 200.0f / 3);
             SDL_FRect leftLane = {0.0f, laneY, 300.0f, 2.0f};
@@ -127,6 +184,7 @@ int main(int argc, char *argv[]) {
             SDL_FRect rightLane = {500.0f, laneY, 300.0f, 2.0f};
             SDL_RenderFillRect(renderer, &rightLane);
         }
+        // Vertical lane lines for the upper and lower segments of the vertical road
         for (int i = 1; i <= 2; i++) {
             float laneX = 300.0f + (i * 200.0f / 3);
             SDL_FRect upperLane = {laneX, 0.0f, 2.0f, 300.0f};
@@ -135,31 +193,54 @@ int main(int argc, char *argv[]) {
             SDL_RenderFillRect(renderer, &lowerLane);
         }
 
-        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-        float priorityLaneX = 366.67f + (33.33f);
+        // --- Draw the Priority Lane (Dashed Yellow Line) ---
+        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // Yellow color for dashed line
+        float priorityLaneX = 366.67f + 33.33f; // Using the provided x-coordinate
+        // Draw dashed line on the upper segment of the vertical road (from y=0 to y=300)
         for (float y = 0.0f; y < 300.0f; y += 40.0f) {
             SDL_FRect dash = {priorityLaneX, y, 5.0f, 20.0f};
             SDL_RenderFillRect(renderer, &dash);
         }
-        
+
+        // Vehicle queue processing and rendering
+        Node* temp = vehicleQueue.front;
+        while (temp) {
+            // Activate priority lane if more than 10 vehicles are in the queue
+            if (vehicleQueue.count > PRIORITY_LANE_THRESHOLD) {
+                // Change the behavior of the vehicle (e.g., speed or priority actions)
+                printf("🚨 Priority Lane Activated: %d vehicles in queue.\n", vehicleQueue.count);
+            }
+
+            if (lights[temp->vehicle.lane].state == 1) {  // Green Light
+                // Move vehicle along the x-axis until it reaches the threshold
+                if (!temp->vehicle.hasTurnedLeft) {
+                    temp->vehicle.x += temp->vehicle.speed;
+                }
+
+                // If the vehicle crosses the left turn threshold and hasn't turned left
+                if (temp->vehicle.x > LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
+                    moveVehicleLeftTurn(&temp->vehicle);  // Move the vehicle to simulate left turn
+                }
+
+                // If the vehicle has turned, remove it from the queue
+                if (temp->vehicle.hasTurnedLeft) {
+                    dequeue(&vehicleQueue);
+                }
+            }
+
+            renderVehicle(renderer, temp->vehicle);  // Render the vehicle
+            temp = temp->next;
+        }
+
+        // Render all traffic lights
         for (int i = 0; i < 4; i++) {
             renderTrafficLight(renderer, lights[i]);
         }
 
-        Node* temp = vehicleQueue.front;
-        while (temp) {
-            if (lights[temp->vehicle.lane].state == 1) {
-                temp->vehicle.x += temp->vehicle.speed;
-                if (temp->vehicle.x > WIDTH) dequeue(&vehicleQueue);
-            }
-            renderVehicle(renderer, temp->vehicle);
-            temp = temp->next;
-        }
-
-        SDL_Delay(16);
         SDL_RenderPresent(renderer);
     }
 
+    // Cleanup
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
