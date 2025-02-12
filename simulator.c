@@ -137,29 +137,36 @@ int main(int argc, char *argv[]) {
 
     Uint32 lastSwitchTime = SDL_GetTicks();
     int currentGreen = 1;
-    Queue vehicleQueue;
-    initQueue(&vehicleQueue);
+    Queue vehicleQueueA, vehicleQueueB, vehicleQueueC, vehicleQueueD;
+    initQueue(&vehicleQueueA);
+    initQueue(&vehicleQueueB);
+    initQueue(&vehicleQueueC);
+    initQueue(&vehicleQueueD);
 
     SDL_Event event;
     int running = 1;
     static Uint32 lastUpdateTime = 0;  // Add this to update the vehicle queue at intervals
 
+    // Main loop (focus on vehicle movement and queue management)
     while (running) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) running = 0;
         }
 
-        // Switch the traffic light every 5 seconds
-        if (SDL_GetTicks() - lastSwitchTime > 5000) {
+        // Switch the traffic light every 2 seconds
+        if (SDL_GetTicks() - lastSwitchTime > 2000) {
             lights[currentGreen].state = 0;  // Set current green light to red
             currentGreen = (currentGreen + 1) % 4;  // Move to the next light
             lights[currentGreen].state = 1;  // Set new light to green
             lastSwitchTime = SDL_GetTicks();
         }
 
-        // Read laneA.txt to update vehicles in the queue every 5 seconds
-        if (SDL_GetTicks() - lastUpdateTime > 5000) {
-            updateVehicleQueueFromFile(&vehicleQueue, "laneA.txt");
+        // Read laneA.txt to update vehicles in the queue every 2 seconds
+        if (SDL_GetTicks() - lastUpdateTime > 2000) {
+            updateVehicleQueueFromFile(&vehicleQueueA, "laneA.txt");
+            updateVehicleQueueFromFile(&vehicleQueueB, "laneB.txt");
+            updateVehicleQueueFromFile(&vehicleQueueC, "laneC.txt");
+            updateVehicleQueueFromFile(&vehicleQueueD, "laneD.txt");
             lastUpdateTime = SDL_GetTicks();
         }
 
@@ -167,7 +174,7 @@ int main(int argc, char *argv[]) {
         SDL_SetRenderDrawColor(renderer, 34, 139, 34, 255); // Grass background
         SDL_RenderClear(renderer);
 
-        // Draw roads
+        // Draw roads and lane markings (no UI change)
         SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255); // Gray for roads
         SDL_FRect horizontalRoad = {0.0f, 300.0f, 800.0f, 200.0f};
         SDL_RenderFillRect(renderer, &horizontalRoad);
@@ -176,7 +183,6 @@ int main(int argc, char *argv[]) {
 
         // --- Draw Lane Markings ---
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // White for lane markings
-        // Horizontal lane lines for the roads on the left and right of the vertical road
         for (int i = 1; i <= 2; i++) {
             float laneY = 300.0f + (i * 200.0f / 3);
             SDL_FRect leftLane = {0.0f, laneY, 300.0f, 2.0f};
@@ -184,7 +190,6 @@ int main(int argc, char *argv[]) {
             SDL_FRect rightLane = {500.0f, laneY, 300.0f, 2.0f};
             SDL_RenderFillRect(renderer, &rightLane);
         }
-        // Vertical lane lines for the upper and lower segments of the vertical road
         for (int i = 1; i <= 2; i++) {
             float laneX = 300.0f + (i * 200.0f / 3);
             SDL_FRect upperLane = {laneX, 0.0f, 2.0f, 300.0f};
@@ -195,40 +200,95 @@ int main(int argc, char *argv[]) {
 
         // --- Draw the Priority Lane (Dashed Yellow Line) ---
         SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // Yellow color for dashed line
-        float priorityLaneX = 366.67f + 33.33f; // Using the provided x-coordinate
-        // Draw dashed line on the upper segment of the vertical road (from y=0 to y=300)
+        float priorityLaneX = 366.67f + 33.33f;
         for (float y = 0.0f; y < 300.0f; y += 40.0f) {
             SDL_FRect dash = {priorityLaneX, y, 5.0f, 20.0f};
             SDL_RenderFillRect(renderer, &dash);
         }
 
-        // Vehicle queue processing and rendering
-        Node* temp = vehicleQueue.front;
+        // --- Vehicle Queue Processing and Rendering ---
+        Node* temp;
+        // Process vehicles from queueA
+        temp = vehicleQueueA.front;
         while (temp) {
-            // Activate priority lane if more than 10 vehicles are in the queue
-            if (vehicleQueue.count > PRIORITY_LANE_THRESHOLD) {
-                // Change the behavior of the vehicle (e.g., speed or priority actions)
-                printf("🚨 Priority Lane Activated: %d vehicles in queue.\n", vehicleQueue.count);
-            }
-
             if (lights[temp->vehicle.lane].state == 1) {  // Green Light
-                // Move vehicle along the x-axis until it reaches the threshold
                 if (!temp->vehicle.hasTurnedLeft) {
                     temp->vehicle.x += temp->vehicle.speed;
                 }
 
-                // If the vehicle crosses the left turn threshold and hasn't turned left
                 if (temp->vehicle.x > LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
-                    moveVehicleLeftTurn(&temp->vehicle);  // Move the vehicle to simulate left turn
+                    moveVehicleLeftTurn(&temp->vehicle);
                 }
 
-                // If the vehicle has turned, remove it from the queue
                 if (temp->vehicle.hasTurnedLeft) {
-                    dequeue(&vehicleQueue);
+                    dequeue(&vehicleQueueA);
                 }
             }
 
-            renderVehicle(renderer, temp->vehicle);  // Render the vehicle
+            renderVehicle(renderer, temp->vehicle);
+            temp = temp->next;
+        }
+
+        // Process vehicles from queueB
+        temp = vehicleQueueB.front;
+        while (temp) {
+            if (lights[temp->vehicle.lane].state == 1) {
+                if (!temp->vehicle.hasTurnedLeft) {
+                    temp->vehicle.x -= temp->vehicle.speed;
+                }
+
+                if (temp->vehicle.x < LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
+                    moveVehicleLeftTurn(&temp->vehicle);
+                }
+
+                if (temp->vehicle.hasTurnedLeft) {
+                    dequeue(&vehicleQueueB);
+                }
+            }
+
+            renderVehicle(renderer, temp->vehicle);
+            temp = temp->next;
+        }
+
+        // Process vehicles from queueC
+        temp = vehicleQueueC.front;
+        while (temp) {
+            if (lights[temp->vehicle.lane].state == 1) {
+                if (!temp->vehicle.hasTurnedLeft) {
+                    temp->vehicle.x -= temp->vehicle.speed;
+                }
+
+                if (temp->vehicle.x < LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
+                    moveVehicleLeftTurn(&temp->vehicle);
+                }
+
+                if (temp->vehicle.hasTurnedLeft) {
+                    dequeue(&vehicleQueueC);
+                }
+            }
+
+            renderVehicle(renderer, temp->vehicle);
+            temp = temp->next;
+        }
+
+        // Process vehicles from queueD
+        temp = vehicleQueueD.front;
+        while (temp) {
+            if (lights[temp->vehicle.lane].state == 1) {
+                if (!temp->vehicle.hasTurnedLeft) {
+                    temp->vehicle.x += temp->vehicle.speed;
+                }
+
+                if (temp->vehicle.x > LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
+                    moveVehicleLeftTurn(&temp->vehicle);
+                }
+
+                if (temp->vehicle.hasTurnedLeft) {
+                    dequeue(&vehicleQueueD);
+                }
+            }
+
+            renderVehicle(renderer, temp->vehicle);
             temp = temp->next;
         }
 
