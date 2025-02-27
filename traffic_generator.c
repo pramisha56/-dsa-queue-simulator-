@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <windows.h>
+#define vehicle_min 1   
+#define vehicle_max 4
 
 // Function to generate vehicles for a specific lane
 void generateVehicles(const char *laneFile, int vehicleCount) {
@@ -23,14 +26,20 @@ void generateVehicles(const char *laneFile, int vehicleCount) {
     printf("Generated %d vehicles in %s\n", vehicleCount, laneFile);
 }
 
+
 int main() {
     srand(time(NULL));  // Seed for random number generation
-
-    // Generate vehicles for each lane
-    generateVehicles("laneA.txt", 12);  // Generate 12 vehicles for lane A
-    generateVehicles("laneB.txt", 10);  // Generate 10 vehicles for lane B
-    generateVehicles("laneC.txt", 15);  // Generate 15 vehicles for lane C
-    generateVehicles("laneD.txt", 8);   // Generate 8 vehicles for lane D
-
+    
+    while(1) {
+        int random_lane_index = rand() % (vehicle_max - vehicle_min + 1) + vehicle_min;
+// Random lane index
+        printf("Random lane index: %d\n", random_lane_index);
+        // Generate vehicles for each lane
+        generateVehicles("laneA.txt", 12);  // Generate 12 vehicles for lane A
+        generateVehicles("laneB.txt", 10);  // Generate 10 vehicles for lane B
+        generateVehicles("laneC.txt", 15);  // Generate 15 vehicles for lane C
+        generateVehicles("laneD.txt", 8);   // Generate 8 vehicles for lane D
+        Sleep(3000); // Sleep for 5 seconds
+    }
     return 0;
 }
