@@ -162,7 +162,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Read laneA.txt to update vehicles in the queue every 2 seconds
-        if (SDL_GetTicks() - lastUpdateTime > 2000) {
+        if (SDL_GetTicks() - lastUpdateTime > 5000) {
             updateVehicleQueueFromFile(&vehicleQueueA, "laneA.txt");
             updateVehicleQueueFromFile(&vehicleQueueB, "laneB.txt");
             updateVehicleQueueFromFile(&vehicleQueueC, "laneC.txt");
