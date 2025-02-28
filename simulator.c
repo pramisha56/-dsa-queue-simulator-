@@ -18,7 +18,7 @@ typedef struct {
 typedef struct {
     float x, y;   // Position of vehicle
     float speed;  // Speed of vehicle
-    int lane;     // Lane index (matches traffic light index)
+    int lane;     // Lane index (0 = AL1, 1 = AL2, 2 = AL3, etc.)
     int hasTurnedLeft;  // Flag to track if the vehicle has turned left
 } Vehicle;
 
@@ -104,7 +104,7 @@ void renderTrafficLight(SDL_Renderer *renderer, TrafficLight light) {
 
 void renderVehicle(SDL_Renderer *renderer, Vehicle vehicle) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // Blue for vehicles
-    SDL_FRect rect = {vehicle.x, vehicle.y, 40, 20}; // Vehicle size
+    SDL_FRect rect = {vehicle.x, vehicle.y, 20, 10}; // Adjusted vehicle size (smaller)
     SDL_RenderFillRect(renderer, &rect);
 }
 
@@ -174,7 +174,7 @@ int main(int argc, char *argv[]) {
         SDL_SetRenderDrawColor(renderer, 34, 139, 34, 255); // Grass background
         SDL_RenderClear(renderer);
 
-        // Draw roads and lane markings (no UI change)
+        // Draw roads and lane markings 
         SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255); // Gray for roads
         SDL_FRect horizontalRoad = {0.0f, 300.0f, 800.0f, 200.0f};
         SDL_RenderFillRect(renderer, &horizontalRoad);
@@ -208,84 +208,89 @@ int main(int argc, char *argv[]) {
 
         // --- Vehicle Queue Processing and Rendering ---
         Node* temp;
-        // Process vehicles from queueA
+
+        // Process vehicles from queueA (Road A)
         temp = vehicleQueueA.front;
         while (temp) {
-            if (lights[temp->vehicle.lane].state == 1) {  // Green Light
-                if (!temp->vehicle.hasTurnedLeft) {
-                    temp->vehicle.x += temp->vehicle.speed;
+            if (temp->vehicle.lane == 1) {  // AL2 (second lane)
+                if (lights[0].state == 1) {  // Green Light for Road A
+                    temp->vehicle.x += temp->vehicle.speed;  // Move straight
                 }
-
-                if (temp->vehicle.x > LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
+            } else if (temp->vehicle.lane == 2) {  // AL3 (third lane)
+                // Free lane, always allow left turn
+                if (!temp->vehicle.hasTurnedLeft) {
                     moveVehicleLeftTurn(&temp->vehicle);
                 }
+            }
 
-                if (temp->vehicle.hasTurnedLeft) {
-                    dequeue(&vehicleQueueA);
-                }
+            if (temp->vehicle.hasTurnedLeft) {
+                dequeue(&vehicleQueueA);
             }
 
             renderVehicle(renderer, temp->vehicle);
             temp = temp->next;
         }
 
-        // Process vehicles from queueB
+        // Process vehicles from queueB (Road B)
         temp = vehicleQueueB.front;
         while (temp) {
-            if (lights[temp->vehicle.lane].state == 1) {
-                if (!temp->vehicle.hasTurnedLeft) {
-                    temp->vehicle.x -= temp->vehicle.speed;
+            if (temp->vehicle.lane == 1) {  // BL2 (second lane)
+                if (lights[1].state == 1) {  // Green Light for Road B
+                    temp->vehicle.x -= temp->vehicle.speed;  // Move straight
                 }
-
-                if (temp->vehicle.x < LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
+            } else if (temp->vehicle.lane == 2) {  // BL3 (third lane)
+                // Free lane, always allow left turn
+                if (!temp->vehicle.hasTurnedLeft) {
                     moveVehicleLeftTurn(&temp->vehicle);
                 }
+            }
 
-                if (temp->vehicle.hasTurnedLeft) {
-                    dequeue(&vehicleQueueB);
-                }
+            if (temp->vehicle.hasTurnedLeft) {
+                dequeue(&vehicleQueueB);
             }
 
             renderVehicle(renderer, temp->vehicle);
             temp = temp->next;
         }
 
-        // Process vehicles from queueC
+        // Process vehicles from queueC (Road C)
         temp = vehicleQueueC.front;
         while (temp) {
-            if (lights[temp->vehicle.lane].state == 1) {
-                if (!temp->vehicle.hasTurnedLeft) {
-                    temp->vehicle.x -= temp->vehicle.speed;
+            if (temp->vehicle.lane == 1) {  // CL2 (second lane)
+                if (lights[2].state == 1) {  // Green Light for Road C
+                    temp->vehicle.x -= temp->vehicle.speed;  // Move straight
                 }
-
-                if (temp->vehicle.x < LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
+            } else if (temp->vehicle.lane == 2) {  // CL3 (third lane)
+                // Free lane, always allow left turn
+                if (!temp->vehicle.hasTurnedLeft) {
                     moveVehicleLeftTurn(&temp->vehicle);
                 }
+            }
 
-                if (temp->vehicle.hasTurnedLeft) {
-                    dequeue(&vehicleQueueC);
-                }
+            if (temp->vehicle.hasTurnedLeft) {
+                dequeue(&vehicleQueueC);
             }
 
             renderVehicle(renderer, temp->vehicle);
             temp = temp->next;
         }
 
-        // Process vehicles from queueD
+        // Process vehicles from queueD (Road D)
         temp = vehicleQueueD.front;
         while (temp) {
-            if (lights[temp->vehicle.lane].state == 1) {
-                if (!temp->vehicle.hasTurnedLeft) {
-                    temp->vehicle.x += temp->vehicle.speed;
+            if (temp->vehicle.lane == 1) {  // DL2 (second lane)
+                if (lights[3].state == 1) {  // Green Light for Road D
+                    temp->vehicle.x += temp->vehicle.speed;  // Move straight
                 }
-
-                if (temp->vehicle.x > LEFT_TURN_THRESHOLD && !temp->vehicle.hasTurnedLeft) {
+            } else if (temp->vehicle.lane == 2) {  // DL3 (third lane)
+                // Free lane, always allow left turn
+                if (!temp->vehicle.hasTurnedLeft) {
                     moveVehicleLeftTurn(&temp->vehicle);
                 }
+            }
 
-                if (temp->vehicle.hasTurnedLeft) {
-                    dequeue(&vehicleQueueD);
-                }
+            if (temp->vehicle.hasTurnedLeft) {
+                dequeue(&vehicleQueueD);
             }
 
             renderVehicle(renderer, temp->vehicle);
