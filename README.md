@@ -60,7 +60,7 @@ To build and run the project, you’ll need:
 
 ## Installing SDL3
 
-Since ![SDL3](https://wiki.libsdl.org/SDL3/FrontPage) is still under development, you may need to build it manually.
+Since [SDL3](https://wiki.libsdl.org/SDL3/FrontPage) is still under development, you may need to build it manually.
 
 ## Building the simulator
 
