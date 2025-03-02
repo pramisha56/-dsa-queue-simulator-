@@ -3,10 +3,12 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_render.h>
 
-#define LEFT_TURN_THRESHOLD 500.0  // The threshold for making the left turn
+#define LEFT_TURN_THRESHOLD 310.0  // The threshold for making the left turn
 #define TURN_DISTANCE 50.0        // Distance to move after making the left turn
 #define TURN_ANGLE 90             // The angle of the left turn
 #define PRIORITY_LANE_THRESHOLD 10 // Number of vehicles to activate priority lane
+#define DISTANCE_BETWEEN_VEHICLES 40.0
+#define MAX_NUMBER_OF_VEHICLES 7
 
 const int WIDTH = 800, HEIGHT = 800;
 
@@ -17,15 +19,20 @@ typedef struct {
 
 typedef struct {
     float x, y;   // Position of vehicle
-    float speed;  // Speed of vehicle
+    float speed;
+    int road;  
     int lane;     // Lane index (0 = AL1, 1 = AL2, 2 = AL3, etc.)
     int hasTurnedLeft;  // Flag to track if the vehicle has turned left
 } Vehicle;
+
+void renderVehicle(SDL_Renderer *renderer, Vehicle vehicle);
+void renderTrafficLight(SDL_Renderer *renderer, TrafficLight light);
 
 // Queue node
 typedef struct Node {
     Vehicle vehicle;
     struct Node* next;
+    struct Node* prev;
 } Node;
 
 // Queue structure
@@ -40,17 +47,31 @@ void initQueue(Queue* q) {
     q->count = 0;
 }
 
+int isQueueEmpty(Queue* q) {
+    return q->front == NULL;
+}
+
+int isQueueFull(Queue* q) {
+    return q->count == MAX_NUMBER_OF_VEHICLES;
+}
+
 void enqueue(Queue* q, Vehicle v) {
-    Node* newNode = (Node*)malloc(sizeof(Node));
-    newNode->vehicle = v;
-    newNode->next = NULL;
-    if (q->rear == NULL) {
-        q->front = q->rear = newNode;
-    } else {
-        q->rear->next = newNode;
-        q->rear = newNode;
+    if (!isQueueFull(q)) {
+        Node* newNode = (Node*)malloc(sizeof(Node));
+        newNode->vehicle = v;
+        newNode->next = NULL;
+        if (q->rear == NULL) {
+            q->front = q->rear = newNode;
+        } else {
+            q->rear->next = newNode;
+            newNode->prev = q->rear;
+            q->rear = newNode;
+        }
+        q->count++;  // Increment vehicle count
+    } 
+    else {
+        return;
     }
-    q->count++;  // Increment vehicle count
 }
 
 void dequeue(Queue* q) {
@@ -62,11 +83,7 @@ void dequeue(Queue* q) {
     q->count--;  // Decrement vehicle count
 }
 
-int isQueueEmpty(Queue* q) {
-    return q->front == NULL;
-}
-
-// Function to read vehicles from laneA.txt and update queue
+// Function to read vehicles from .txt file and update queue
 void updateVehicleQueueFromFile(Queue* q, const char *filename) {
     FILE *fp = fopen(filename, "r");
     if (!fp) {
@@ -74,47 +91,91 @@ void updateVehicleQueueFromFile(Queue* q, const char *filename) {
         return;
     }
 
-    // Clear the queue before adding new vehicles
-    while (!isQueueEmpty(q)) {
-        dequeue(q);
-    }
-
-    char line[100];
+    char line[1000000];
     while (fgets(line, sizeof(line), fp)) {
         Vehicle v;
-        int lane;
-        if (sscanf(line, "%d,%f,%f,%f", &lane, &v.x, &v.y, &v.speed) == 4) {
-            v.lane = lane;  // Assign lane from file data
-            v.hasTurnedLeft = 0;  // Initialize the left turn flag
-            enqueue(q, v);
+        if (sscanf(line, "%d,%d,%f,%f,%f", &v.road, &v.lane, &v.x, &v.y, &v.speed) == 5) {
+            if (v.lane == 2) {
+                enqueue(&q[1], v);
+            }
+            else if (v.lane == 3) {
+                enqueue(&q[2], v);
+            }
         }
+    }
+    fclose(fp);
+
+    // Clear the file after reading the vehicles
+    fp = fopen(filename, "w");
+    if (!fp) {
+        printf("Error opening %s for writing.\n", filename);
+        return;
     }
     fclose(fp);
 }
 
+// / Rest of your code (queue functions, etc.)
+
 void renderTrafficLight(SDL_Renderer *renderer, TrafficLight light) {
+    // Draw the traffic light box
+    SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255); // Dark gray for the box
+    SDL_FRect box = {(float)light.x, (float)light.y, 30.0f, 80.0f}; // Use SDL_FRect
+    SDL_RenderFillRect(renderer, &box);
+
+    // Draw the small stand below the traffic light box
+    SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255); // Gray for the stand
+    SDL_FRect stand = {(float)light.x + 10.0f, (float)light.y + 80.0f, 10.0f, 20.0f}; // Stand dimensions
+    SDL_RenderFillRect(renderer, &stand);
+
+    // Draw the lights (circles)
     if (light.state) {
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // Green
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // Green light
     } else {
-        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Red
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Red light
     }
-    SDL_FRect rect = {light.x, light.y, 30, 50}; // Traffic light size
-    SDL_RenderFillRect(renderer, &rect);
-}
 
+    // Draw a circle for the light using SDL_RenderPoint
+    int centerX = light.x + 15; // Center of the box
+    int centerY = light.y + 20; // Position of the light
+    int radius = 10; // Radius of the light
+
+    for (int w = -radius; w <= radius; w++) {
+        for (int h = -radius; h <= radius; h++) {
+            if (w * w + h * h <= radius * radius) {
+                SDL_RenderPoint(renderer, centerX + w, centerY + h);
+            }
+        }
+    }
+}
 void renderVehicle(SDL_Renderer *renderer, Vehicle vehicle) {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // Blue for vehicles
-    SDL_FRect rect = {vehicle.x, vehicle.y, 20, 10}; // Adjusted vehicle size (smaller)
+    // Main body of the vehicle (car)
+    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // Blue for vehicle body
+    SDL_FRect rect = {vehicle.x, vehicle.y, 30.0f, 20.0f}; // Use SDL_FRect
     SDL_RenderFillRect(renderer, &rect);
-}
 
-void moveVehicleLeftTurn(Vehicle* vehicle) {
-    // Gradually change the vehicle's x and y position to simulate left turn
-    vehicle->x -= TURN_DISTANCE * 0.5;  // Move left
-    vehicle->y += TURN_DISTANCE * 0.5;  // Move downwards after left turn
-    if (vehicle->x <= 300.0f && vehicle->y >= 350.0f) {
-        vehicle->hasTurnedLeft = 1;  // Mark vehicle as having turned left
-    }
+    // Car roof (to make it look more like a car from above)
+    SDL_SetRenderDrawColor(renderer, 0, 0, 200, 255); // Darker blue for roof
+    SDL_FRect roof = {vehicle.x + 5.0f, vehicle.y + 5.0f, 20.0f, 10.0f}; // Use SDL_FRect
+    SDL_RenderFillRect(renderer, &roof);
+
+    // Wheels (four small black circles/rectangles at the corners)
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // Black for wheels
+
+    // Front-left wheel
+    SDL_FRect wheel1 = {vehicle.x - 2.0f, vehicle.y - 2.0f, 6.0f, 6.0f};
+    SDL_RenderFillRect(renderer, &wheel1);
+
+    // Front-right wheel
+    SDL_FRect wheel2 = {vehicle.x + 26.0f, vehicle.y - 2.0f, 6.0f, 6.0f};
+    SDL_RenderFillRect(renderer, &wheel2);
+
+    // Rear-left wheel
+    SDL_FRect wheel3 = {vehicle.x - 2.0f, vehicle.y + 16.0f, 6.0f, 6.0f};
+    SDL_RenderFillRect(renderer, &wheel3);
+
+    // Rear-right wheel
+    SDL_FRect wheel4 = {vehicle.x + 26.0f, vehicle.y + 16.0f, 6.0f, 6.0f};
+    SDL_RenderFillRect(renderer, &wheel4);
 }
 
 int main(int argc, char *argv[]) {
@@ -132,16 +193,21 @@ int main(int argc, char *argv[]) {
 
     // Initialize traffic lights for 4 directions
     TrafficLight lights[4] = {
-        {270, 250, 0}, {530, 250, 1}, {270, 530, 0}, {530, 530, 0}
+        {265, 210, 0}, // Top-left
+        {505, 210, 1}, // Top-right
+        {265, 510, 0}, // Bottom-left
+        {505, 510, 0}  // Bottom-right
     };
 
     Uint32 lastSwitchTime = SDL_GetTicks();
     int currentGreen = 1;
-    Queue vehicleQueueA, vehicleQueueB, vehicleQueueC, vehicleQueueD;
-    initQueue(&vehicleQueueA);
-    initQueue(&vehicleQueueB);
-    initQueue(&vehicleQueueC);
-    initQueue(&vehicleQueueD);
+    Queue vehicleQueueA[3], vehicleQueueB[3], vehicleQueueC[3], vehicleQueueD[3];
+    for (int i = 0; i < 3; i++) {
+        initQueue(&vehicleQueueA[i]);
+        initQueue(&vehicleQueueB[i]);
+        initQueue(&vehicleQueueC[i]);
+        initQueue(&vehicleQueueD[i]);
+    }
 
     SDL_Event event;
     int running = 1;
@@ -154,21 +220,19 @@ int main(int argc, char *argv[]) {
         }
 
         // Switch the traffic light every 2 seconds
-        if (SDL_GetTicks() - lastSwitchTime > 2000) {
+        // TODO: Need to change this logic later.
+        if (SDL_GetTicks() - lastSwitchTime > 20000) {
             lights[currentGreen].state = 0;  // Set current green light to red
             currentGreen = (currentGreen + 1) % 4;  // Move to the next light
             lights[currentGreen].state = 1;  // Set new light to green
             lastSwitchTime = SDL_GetTicks();
         }
 
-        // Read laneA.txt to update vehicles in the queue every 2 seconds
-        if (SDL_GetTicks() - lastUpdateTime > 5000) {
-            updateVehicleQueueFromFile(&vehicleQueueA, "laneA.txt");
-            updateVehicleQueueFromFile(&vehicleQueueB, "laneB.txt");
-            updateVehicleQueueFromFile(&vehicleQueueC, "laneC.txt");
-            updateVehicleQueueFromFile(&vehicleQueueD, "laneD.txt");
-            lastUpdateTime = SDL_GetTicks();
-        }
+        updateVehicleQueueFromFile(vehicleQueueA, "RoadA.txt");
+        updateVehicleQueueFromFile(vehicleQueueB, "RoadB.txt");
+        updateVehicleQueueFromFile(vehicleQueueC, "RoadC.txt");
+        updateVehicleQueueFromFile(vehicleQueueD, "RoadD.txt");
+        lastUpdateTime = SDL_GetTicks();
 
         // Rendering section
         SDL_SetRenderDrawColor(renderer, 34, 139, 34, 255); // Grass background
@@ -206,95 +270,274 @@ int main(int argc, char *argv[]) {
             SDL_RenderFillRect(renderer, &dash);
         }
 
+
         // --- Vehicle Queue Processing and Rendering ---
         Node* temp;
 
         // Process vehicles from queueA (Road A)
-        temp = vehicleQueueA.front;
-        while (temp) {
-            if (temp->vehicle.lane == 1) {  // AL2 (second lane)
-                if (lights[0].state == 1) {  // Green Light for Road A
-                    temp->vehicle.x += temp->vehicle.speed;  // Move straight
+        for (int i = 0; i < 3; i++) {
+            temp = vehicleQueueA[i].front;
+            while (temp) {
+                if (temp->vehicle.lane == 2) {  // AL2 (second lane)
+                    if (temp == vehicleQueueA[i].front) {
+                        if (temp->vehicle.y < 290) {
+                            temp->vehicle.y += temp->vehicle.speed;
+                        }
+                    }
+                    else {
+                        if (temp->vehicle.y < (temp->prev->vehicle.y) - DISTANCE_BETWEEN_VEHICLES) {
+                            temp->vehicle.y += temp->vehicle.speed;
+                        }
+                    }
+                    if (lights[0].state == 1) {  // Green Light for Road A
+                        if (temp == vehicleQueueA[i].front) {
+                            // Move upto the junction.
+                            if (temp->vehicle.y <= 450) {
+                                temp->vehicle.y += temp->vehicle.speed;
+                            }
+                            else {
+                                if (temp->vehicle.x <= 450) {
+                                    temp->vehicle.x += temp->vehicle.speed;
+                                }
+                                else {
+                                    if (temp->vehicle.y <= 830) {
+                                        temp->vehicle.y += temp->vehicle.speed;
+                                    }
+                                }
+                            }
+                        }
+                        else {
+                            if (temp->vehicle.y <= (temp->prev->vehicle.y) - DISTANCE_BETWEEN_VEHICLES) {
+                                temp->vehicle.y += temp->vehicle.speed;
+                                
+                            }
+                            temp->vehicle.x = temp->prev->vehicle.x;
+                            // else {
+                            //     if (temp->vehicle.x <= (temp->prev->vehicle.x) - DISTANCE_BETWEEN_VEHICLES) {
+                            //         temp->vehicle.x += temp->vehicle.speed;
+                            //     }
+                            //     else {
+                            //         if (temp->vehicle.y <= (temp->prev->vehicle.y) + DISTANCE_BETWEEN_VEHICLES) {
+                            //             temp->vehicle.y += temp->vehicle.speed;
+                            //         }
+                            //     }
+                            // }
+                        }
+                    }
+                } 
+                else if (temp->vehicle.lane == 3) {  // AL3 (third lane)
+                    // Free lane, always allow left turn
+                    if (temp->vehicle.y < LEFT_TURN_THRESHOLD) {
+                        temp->vehicle.y += temp->vehicle.speed;  // Move straight
+                    } else {
+                        temp->vehicle.x += temp->vehicle.speed;  // Move right
+                        // if (temp->vehicle.x >= 800) {
+                        //     dequeue(&vehicleQueueA);
+                        // }
+                    }
                 }
-            } else if (temp->vehicle.lane == 2) {  // AL3 (third lane)
-                // Free lane, always allow left turn
-                if (!temp->vehicle.hasTurnedLeft) {
-                    moveVehicleLeftTurn(&temp->vehicle);
-                }
+                renderVehicle(renderer, temp->vehicle);
+                temp = temp->next;
             }
-
-            if (temp->vehicle.hasTurnedLeft) {
-                dequeue(&vehicleQueueA);
-            }
-
-            renderVehicle(renderer, temp->vehicle);
-            temp = temp->next;
         }
 
         // Process vehicles from queueB (Road B)
-        temp = vehicleQueueB.front;
-        while (temp) {
-            if (temp->vehicle.lane == 1) {  // BL2 (second lane)
-                if (lights[1].state == 1) {  // Green Light for Road B
-                    temp->vehicle.x -= temp->vehicle.speed;  // Move straight
+        for (int i = 0; i < 3; i++) {
+            temp = vehicleQueueB[i].front;
+            while (temp) {
+                if (temp->vehicle.lane == 2) {  // BL2 (second lane)
+                    if (temp == vehicleQueueB[i].front) {
+                        if (temp->vehicle.x > 480) {
+                            temp->vehicle.x -= temp->vehicle.speed;
+                        }
+                    }
+                    else {
+                        if (temp->vehicle.x > (temp->prev->vehicle.x) + DISTANCE_BETWEEN_VEHICLES) {
+                            temp->vehicle.x -= temp->vehicle.speed;
+                        }
+                    }
+                    if (lights[1].state == 1) {  // Green Light for Road B
+                        if (temp == vehicleQueueB[i].front) {
+                            // Move upto the junction.
+                            if (temp->vehicle.x >= 350) {
+                                temp->vehicle.x -= temp->vehicle.speed;
+                            }
+                            else {
+                                if (temp->vehicle.y <= 450) {
+                                    temp->vehicle.y += temp->vehicle.speed;
+                                }
+                                else {
+                                    if (temp->vehicle.x >= -30) {
+                                        temp->vehicle.x -= temp->vehicle.speed;
+                                    }
+                                }
+                            }
+                        }
+                        else {
+                            if (temp->vehicle.x >= (temp->prev->vehicle.x) + DISTANCE_BETWEEN_VEHICLES) {
+                                temp->vehicle.x -= temp->vehicle.speed;
+                                
+                            }
+                            temp->vehicle.y = temp->prev->vehicle.y;
+                            // else {
+                            //     if (temp->vehicle.y <= (temp->prev->vehicle.y) - DISTANCE_BETWEEN_VEHICLES) {
+                            //         temp->vehicle.y += temp->vehicle.speed;
+                            //     }
+                            //     else {
+                            //         if (temp->vehicle.x >= (temp->prev->vehicle.x) - DISTANCE_BETWEEN_VEHICLES) {
+                            //             temp->vehicle.x -= temp->vehicle.speed;
+                            //         }
+                            //     }
+                            // }
+                        }
+                    }
+                } else if (temp->vehicle.lane == 3) {  // BL3 (third lane)
+                    // Free lane, always allow left turn
+                    if (temp->vehicle.x > 460) {
+                        temp->vehicle.x -= temp->vehicle.speed;  // Move straight
+                    }
+                    else {
+                        temp->vehicle.y += temp->vehicle.speed;  // Move down
+                        // if (temp->vehicle.y > 800) {
+                        //     dequeue(&vehicleQueueB);
+                        // }
+                    }
                 }
-            } else if (temp->vehicle.lane == 2) {  // BL3 (third lane)
-                // Free lane, always allow left turn
-                if (!temp->vehicle.hasTurnedLeft) {
-                    moveVehicleLeftTurn(&temp->vehicle);
-                }
-            }
 
-            if (temp->vehicle.hasTurnedLeft) {
-                dequeue(&vehicleQueueB);
+                renderVehicle(renderer, temp->vehicle);
+                temp = temp->next;
             }
-
-            renderVehicle(renderer, temp->vehicle);
-            temp = temp->next;
         }
 
         // Process vehicles from queueC (Road C)
-        temp = vehicleQueueC.front;
-        while (temp) {
-            if (temp->vehicle.lane == 1) {  // CL2 (second lane)
-                if (lights[2].state == 1) {  // Green Light for Road C
-                    temp->vehicle.x -= temp->vehicle.speed;  // Move straight
+        for (int i = 0; i < 3; i++) {
+            temp = vehicleQueueC[i].front;
+            while (temp) {
+                if (temp->vehicle.lane == 2) {  // CL2 (second lane)
+                    if (temp == vehicleQueueC[i].front) {
+                        if (temp->vehicle.y > 500) {
+                            temp->vehicle.y -= temp->vehicle.speed;
+                        }
+                    }
+                    else {
+                        if (temp->vehicle.y > (temp->prev->vehicle.y) + DISTANCE_BETWEEN_VEHICLES) {
+                            temp->vehicle.y -= temp->vehicle.speed;
+                        }
+                    }
+                    if (lights[2].state == 1) {  // Green Light for Road C
+                        if (temp == vehicleQueueC[i].front) {
+                            if (temp->vehicle.y >= 350) {
+                                temp->vehicle.y -= temp->vehicle.speed;
+                            }
+                            else {
+                                if (temp->vehicle.x >= 320) {
+                                    temp->vehicle.x -= temp->vehicle.speed;
+                                }
+                                else {
+                                    if (temp->vehicle.y >= -30) {
+                                        temp->vehicle.y -= temp->vehicle.speed;
+                                    }
+                                }
+                            }
+                        }
+                        else {
+                            if (temp->vehicle.y >= (temp->prev->vehicle.y) + DISTANCE_BETWEEN_VEHICLES) {
+                                temp->vehicle.y -= temp->vehicle.speed;
+                                
+                            }
+                            temp->vehicle.x = temp->prev->vehicle.x;
+                            // else {
+                            //     if (temp->vehicle.x >= (temp->prev->vehicle.x) + DISTANCE_BETWEEN_VEHICLES) {
+                            //         temp->vehicle.x -= temp->vehicle.speed;
+                            //     }
+                            //     else {
+                            //         if (temp->vehicle.y >= (temp->prev->vehicle.y) - DISTANCE_BETWEEN_VEHICLES) {
+                            //             temp->vehicle.y -= temp->vehicle.speed;
+                            //         }
+                            //     }
+                            // }
+                        }
+                    }
+                } else if (temp->vehicle.lane == 3) {  // CL3 (third lane)
+                    // Free lane, always allow left turn
+                    if (temp->vehicle.y > 460) {
+                        temp->vehicle.y -= temp->vehicle.speed;  // Move straight
+                    } else {
+                        temp->vehicle.x -= temp->vehicle.speed;  // Move left
+                        // if (temp->vehicle.x < -20) {
+                        //     dequeue(&vehicleQueueC);
+                        // }
+                    }
                 }
-            } else if (temp->vehicle.lane == 2) {  // CL3 (third lane)
-                // Free lane, always allow left turn
-                if (!temp->vehicle.hasTurnedLeft) {
-                    moveVehicleLeftTurn(&temp->vehicle);
-                }
-            }
 
-            if (temp->vehicle.hasTurnedLeft) {
-                dequeue(&vehicleQueueC);
+                renderVehicle(renderer, temp->vehicle);
+                temp = temp->next;
             }
-
-            renderVehicle(renderer, temp->vehicle);
-            temp = temp->next;
         }
 
         // Process vehicles from queueD (Road D)
-        temp = vehicleQueueD.front;
-        while (temp) {
-            if (temp->vehicle.lane == 1) {  // DL2 (second lane)
-                if (lights[3].state == 1) {  // Green Light for Road D
-                    temp->vehicle.x += temp->vehicle.speed;  // Move straight
+        for (int i = 0; i < 3; i++) {
+            temp = vehicleQueueD[i].front;
+            while (temp) {
+                if (temp->vehicle.lane == 2) {  // DL2 (second lane)
+                    if (temp == vehicleQueueD[i].front) {
+                        if (temp->vehicle.x < 290) {
+                            temp->vehicle.x += temp->vehicle.speed;
+                        }
+                    }
+                    else {
+                        if (temp->vehicle.x < (temp->prev->vehicle.x) - DISTANCE_BETWEEN_VEHICLES) {
+                            temp->vehicle.x += temp->vehicle.speed;
+                        }
+                    }
+                    if (lights[3].state == 1) {  // Green Light for Road D
+                        if (temp == vehicleQueueD[i].front) {
+                            if (temp->vehicle.x <= 450) {
+                                temp->vehicle.x += temp->vehicle.speed;
+                            }
+                            else {
+                                if (temp->vehicle.y >= 350) {
+                                    temp->vehicle.y -= temp->vehicle.speed;
+                                }
+                                else {
+                                    if (temp->vehicle.x <= 830) {
+                                        temp->vehicle.x += temp->vehicle.speed;
+                                    }
+                                }
+                            }
+                        }
+                        else {
+                            if (temp->vehicle.x <= (temp->prev->vehicle.x) - DISTANCE_BETWEEN_VEHICLES) {
+                                temp->vehicle.x += temp->vehicle.speed;
+                            }
+                            temp->vehicle.y = temp->prev->vehicle.y;
+                            // else {
+                            //     if (temp->vehicle.y >= (temp->prev->vehicle.y) + DISTANCE_BETWEEN_VEHICLES) {
+                            //         temp->vehicle.y -= temp->vehicle.speed;
+                            //     }
+                            //     else {
+                            //         if (temp->vehicle.x <= (temp->prev->vehicle.x) + DISTANCE_BETWEEN_VEHICLES) {
+                            //             temp->vehicle.x += temp->vehicle.speed;
+                            //         }
+                            //     }
+                            // }
+                        }
+                    }
+                } else if (temp->vehicle.lane == 3) {  // DL3 (third lane)
+                    // Free lane, always allow left turn
+                    if (temp->vehicle.x < 330) {
+                        temp->vehicle.x += temp->vehicle.speed;  // Move straight
+                    } else {
+                        temp->vehicle.y -= temp->vehicle.speed;  // Move up
+                        // if (temp->vehicle.y < -20) {
+                        //     dequeue(&vehicleQueueD);
+                        // }
+                    }
                 }
-            } else if (temp->vehicle.lane == 2) {  // DL3 (third lane)
-                // Free lane, always allow left turn
-                if (!temp->vehicle.hasTurnedLeft) {
-                    moveVehicleLeftTurn(&temp->vehicle);
-                }
-            }
 
-            if (temp->vehicle.hasTurnedLeft) {
-                dequeue(&vehicleQueueD);
+                renderVehicle(renderer, temp->vehicle);
+                temp = temp->next;
             }
-
-            renderVehicle(renderer, temp->vehicle);
-            temp = temp->next;
         }
 
         // Render all traffic lights

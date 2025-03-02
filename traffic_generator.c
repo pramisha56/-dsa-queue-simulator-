@@ -68,7 +68,7 @@ void generateVehicles(const char *laneFile, int vehicleCount, int road) {
                 break;
         }
 
-        float speed = 0.8 ;
+        float speed = 0.09;
         fprintf(fp, "%d,%d,%.2f,%.2f,%.2f\n", road, lane, x, y, speed);
     }
 
